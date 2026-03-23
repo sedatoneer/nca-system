@@ -122,7 +122,26 @@ async def rate_limit_increment(key: str):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    checks = {"api": "ok", "db": "error", "redis": "error"}
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.fetchval("SELECT 1")
+        checks["db"] = "ok"
+    except Exception:
+        pass
+    try:
+        await redis_cli.ping()
+        checks["redis"] = "ok"
+    except Exception:
+        pass
+
+    overall = "ok" if all(v == "ok" for v in checks.values()) else "degraded"
+    status_code = 200 if overall == "ok" else 503
+    return Response(
+        content=json.dumps({"status": overall, **checks}),
+        media_type="application/json",
+        status_code=status_code,
+    )
 
 
 # Endpoint: POST /auth
